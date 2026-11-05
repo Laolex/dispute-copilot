@@ -1,0 +1,14 @@
+{$DOMAIN} {
+	encode gzip
+	# Webhook body limit mirrors the app's; everything else is small.
+	request_body {
+		max_size 300KB
+	}
+	reverse_proxy app:8000
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+	}
+}

@@ -1,0 +1,8 @@
+.env
+spike/out/
+__pycache__/
+.pytest_cache/
+*.db
+deploy.env
+.env.compose
+.venv/

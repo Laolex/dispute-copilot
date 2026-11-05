@@ -1,0 +1,131 @@
+{
+  "status": 200,
+  "debug_id": "ca53dcb5e7947",
+  "body": {
+    "dispute_id": "PP-R-TSL-10195822",
+    "create_time": "2026-11-01T20:09:30.379Z",
+    "update_time": "2026-11-01T20:54:21.861Z",
+    "disputed_transactions": [
+      {
+        "buyer_transaction_id": "29600657S1204633M",
+        "seller_transaction_id": "76X00088A7532581F",
+        "create_time": "2026-11-01T20:06:22.000Z",
+        "transaction_status": "HELD",
+        "gross_amount": {
+          "currency_code": "USD",
+          "value": "25.00"
+        },
+        "buyer": {
+          "email": "sb-xdx1x53472317@personal.example.com",
+          "payer_id": "25W9VBVCWVD6Q",
+          "name": "John Doe"
+        },
+        "seller": {
+          "email": "sb-onath53655937@business.example.com",
+          "merchant_id": "935K3A6MBZGUQ",
+          "name": "Test Store"
+        },
+        "items": [
+          {
+            "item_name": "Dispute Copilot sandbox test order",
+            "item_description": "Dispute Copilot sandbox test order",
+            "item_quantity": "1",
+            "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+            "item_type": "DIGITAL_DOWNLOAD"
+          }
+        ],
+        "seller_protection_eligible": true,
+        "seller_protection_type": "EXPANDED_SELLER_PROTECTION"
+      }
+    ],
+    "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+    "status": "UNDER_REVIEW",
+    "dispute_amount": {
+      "currency_code": "USD",
+      "value": "25.00"
+    },
+    "dispute_state": "REQUIRED_OTHER_PARTY_ACTION",
+    "fund_movements": [
+      {
+        "party": "RECEIVER",
+        "amount": {
+          "currency_code": "USD",
+          "value": "23.26"
+        },
+        "initiated_time": "2026-11-01T20:12:33.000Z",
+        "type": "DEBIT",
+        "reason": "HOLD_PLACED"
+      }
+    ],
+    "dispute_life_cycle_stage": "INQUIRY",
+    "dispute_channel": "INTERNAL",
+    "messages": [
+      {
+        "posted_by": "BUYER",
+        "time_posted": "2026-11-01T20:09:30.379Z",
+        "content": "didnt get the goods"
+      }
+    ],
+    "extensions": {
+      "merchant_contacted": false,
+      "buyer_contacted_time": "2026-11-01T20:09:29.713Z"
+    },
+    "evidences": [
+      {
+        "evidence_type": "CREATE",
+        "notes": "didnt get the goods",
+        "source": "SUBMITTED_BY_BUYER",
+        "date": "2026-11-01T20:09:30.379Z",
+        "dispute_life_cycle_stage": "INQUIRY"
+      },
+      {
+        "evidence_type": "PROOF_OF_FULFILLMENT",
+        "evidence_info": {
+          "tracking_info": [
+            {
+              "carrier_name": "UPS",
+              "tracking_number": "1Z999AA10123456784"
+            }
+          ]
+        },
+        "notes": "Shipped via UPS",
+        "source": "SUBMITTED_BY_SELLER",
+        "date": "2026-11-01T20:51:11.941Z",
+        "action_info": {
+          "action": "PROVIDE_EVIDENCE"
+        },
+        "dispute_life_cycle_stage": "INQUIRY"
+      },
+      {
+        "evidence_type": "OTHER",
+        "notes": "Shipped via UPS, tracking provided",
+        "source": "SUBMITTED_BY_SELLER",
+        "date": "2026-11-01T20:54:21.861Z",
+        "action_info": {
+          "action": "ESCALATE"
+        },
+        "dispute_life_cycle_stage": "INQUIRY"
+      }
+    ],
+    "buyer_response_due_date": "2026-11-21T20:09:30.379Z",
+    "offer": {
+      "buyer_requested_amount": {
+        "currency_code": "USD",
+        "value": "25.00"
+      }
+    },
+    "refund_details": {
+      "allowed_refund_amount": {
+        "currency_code": "USD",
+        "value": "25.00"
+      }
+    },
+    "links": [
+      {
+        "href": "https://api-m.sandbox.paypal.com/v1/customer/disputes/PP-R-TSL-10195822",
+        "rel": "self",
+        "method": "GET"
+      }
+    ]
+  }
+}

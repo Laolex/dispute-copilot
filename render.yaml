@@ -1,0 +1,27 @@
+# Render Blueprint: New > Blueprint > pick this repo. Secrets are entered in the dashboard, never committed.
+services:
+  - type: web
+    name: dispute-copilot
+    runtime: docker
+    plan: starter              # a persistent disk needs a paid instance; free has none
+    region: frankfurt          # closest to Lagos
+    autoDeploy: false          # deploy deliberately; a bad push must not take the demo down
+    healthCheckPath: /healthz
+    disk:
+      name: dc-data
+      mountPath: /var/lib/dc   # SQLite database + audit log live here
+      sizeGB: 1
+    envVars:
+      - key: PORT
+        value: "10000"
+      - key: PAYPAL_BASE_URL
+        value: https://api-m.sandbox.paypal.com
+      - key: PAYPAL_CLIENT_ID
+        sync: false            # prompted once at Blueprint creation
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: DC_ADMIN_PASSWORD
+        generateValue: true    # read it in the dashboard (Environment tab) to log in
+      - key: DC_MODEL
+        value: claude-haiku-5-5
+      # Added in the dashboard later: PAYPAL_WEBHOOK_ID (after webhook-create), ANTHROPIC_API_KEY (optional)
