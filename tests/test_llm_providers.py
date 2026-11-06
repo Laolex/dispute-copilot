@@ -98,3 +98,20 @@ def test_groq_raises_on_non_200():
 def test_groq_requires_api_key():
     with pytest.raises(ValueError, match="GROQ_API_KEY"):
         GroqLLM(api_key="")
+
+
+def test_groq_reasoning_model_gets_low_effort_and_room_to_answer():
+    seen = {}
+
+    def handler(req):
+        seen.update(json.loads(req.content))
+        return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
+    llm = GroqLLM(model="openai/gpt-oss-20b", api_key="gsk_x")
+    llm._http = httpx.Client(transport=httpx.MockTransport(handler))
+    assert llm.complete("s", "u", max_tokens=600) == "ok"
+    assert seen["reasoning_effort"] == "low" and seen["max_tokens"] >= 2000
+    seen.clear()
+    plain = GroqLLM(model="llama-3.1-8b-instant", api_key="gsk_x")
+    plain._http = httpx.Client(transport=httpx.MockTransport(handler))
+    plain.complete("s", "u", max_tokens=600)
+    assert "reasoning_effort" not in seen and seen["max_tokens"] == 600

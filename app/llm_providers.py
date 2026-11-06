@@ -60,17 +60,21 @@ class GroqLLM:
         )
 
     def complete(self, system: str, user: str, max_tokens: int = 600) -> str:
-        r = self._http.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            json={
-                "model": self._model,
-                "messages": [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": user},
-                ],
-                "max_tokens": max_tokens,
-                "temperature": 0.3,
-            },
-        )
+        body = {
+            "model": self._model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            "max_tokens": max_tokens,
+            "temperature": 0.3,
+        }
+        if "gpt-oss" in self._model:
+            # Reasoning models spend completion tokens thinking before they answer. Keep that short and leave
+            # room, otherwise a 600-token cap can be used up before any answer text is produced.
+            body["reasoning_effort"] = "low"
+            body["max_tokens"] = max(max_tokens, 2000)
+        r = self._http.post("https://api.groq.com/openai/v1/chat/completions", json=body)
         r.raise_for_status()
-        return r.json()["choices"][0]["message"]["content"]
+        return r.json()["choices"][0]["message"].get("content") or ""
+
