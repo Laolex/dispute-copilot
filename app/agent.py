@@ -11,6 +11,7 @@ sanitised. Even a fully hijacked model can only produce bad draft text that a hu
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass
 from typing import Callable, Protocol, TypedDict
@@ -20,6 +21,15 @@ from langgraph.graph import END, START, StateGraph
 from .agent_rule import AIRecommendation, ai_recommend_action
 from .models import Dispute
 from .rules import Action, Decision, MerchantEvidence
+
+log = logging.getLogger("dispute_copilot.ai")
+
+
+def log_llm_failure(step: str, exc: Exception) -> None:
+    """Model calls fail soft (the policy still works), but a silent fallback hides a bad key or model name.
+    Log the error type and HTTP status only: never the request, which carries buyer text and the key."""
+    status = getattr(getattr(exc, "response", None), "status_code", None)
+    log.warning("LLM %s failed: %s%s; using fallback", step, type(exc).__name__, f" (HTTP {status})" if status else "")
 
 MAX_DRAFT = 900
 CHANGE_OF_MIND = re.compile(r"(don'?t|do not|dont|no longer) want|changed my mind|change of mind|no longer need|don'?t need", re.I)
@@ -143,7 +153,10 @@ def build_agent(llm: LLM | None) -> Callable[[AgentState], AgentState]:
         try:
             out = llm.complete(SYSTEM_ANALYZE, f"dispute_reason: {d.reason}\n<buyer_claim>\n{d.buyer_claim[:1500]}\n</buyer_claim>")
             a = parse_analysis(out)
-        except Exception:
+            if a is None:
+                log.warning("LLM analyze returned unparseable output; using fallback")
+        except Exception as exc:
+            log_llm_failure("analyze", exc)
             a = None
         return {"analysis": a or base, "used_fallback": a is None}
 
@@ -153,7 +166,8 @@ def build_agent(llm: LLM | None) -> Callable[[AgentState], AgentState]:
         if use_model:
             try:
                 text = llm.complete(SYSTEM_DRAFT, f"<facts>{_facts(d, dec, ev)}</facts>\n<buyer_claim>\n{d.buyer_claim[:1500]}\n</buyer_claim>")
-            except Exception:
+            except Exception as exc:
+                log_llm_failure("draft", exc)
                 text = ""
         text = sanitise_draft(text) or template_draft(d, dec, ev)
         return {"draft": text}

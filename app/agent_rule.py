@@ -18,6 +18,8 @@ test, and lock it before relying on it. It is not the runtime policy.
 
 from __future__ import annotations
 
+import logging
+
 import json
 import re
 from dataclasses import dataclass, field
@@ -197,11 +199,15 @@ def ai_recommend_action(
 
     try:
         out = llm.complete(AI_RECOMMEND_SYSTEM, facts)
-    except Exception:
+    except Exception as exc:
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+        logging.getLogger("dispute_copilot.ai").warning(
+            "LLM recommend failed: %s%s", type(exc).__name__, f" (HTTP {status})" if status else "")
         return None
 
     parsed = _parse_json_block(out)
     if parsed is None:
+        logging.getLogger("dispute_copilot.ai").warning("LLM recommend returned unparseable output")
         return None
 
     try:
