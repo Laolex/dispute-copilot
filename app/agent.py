@@ -18,18 +18,12 @@ from typing import Callable, Protocol, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
-from .agent_rule import AIRecommendation, ai_recommend_action
+from .agent_rule import AIRecommendation, ai_recommend_action, log_llm_failure
 from .models import Dispute
 from .rules import Action, Decision, MerchantEvidence
 
 log = logging.getLogger("dispute_copilot.ai")
 
-
-def log_llm_failure(step: str, exc: Exception) -> None:
-    """Model calls fail soft (the policy still works), but a silent fallback hides a bad key or model name.
-    Log the error type and HTTP status only: never the request, which carries buyer text and the key."""
-    status = getattr(getattr(exc, "response", None), "status_code", None)
-    log.warning("LLM %s failed: %s%s; using fallback", step, type(exc).__name__, f" (HTTP {status})" if status else "")
 
 MAX_DRAFT = 900
 CHANGE_OF_MIND = re.compile(r"(don'?t|do not|dont|no longer) want|changed my mind|change of mind|no longer need|don'?t need", re.I)

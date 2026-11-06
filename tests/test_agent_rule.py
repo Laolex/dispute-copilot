@@ -255,3 +255,13 @@ def test_ai_recommend_action_negative_confidence_clamped():
 
 
 
+
+
+def test_llm_failure_log_names_the_provider_error_but_never_the_request(caplog):
+    import httpx
+    from app.agent_rule import log_llm_failure
+    req = httpx.Request("POST", "https://api.groq.com/openai/v1/chat/completions", headers={"Authorization": "Bearer SECRETKEY"})
+    resp = httpx.Response(404, json={"error": {"message": "The model `claude-haiku-5-5` does not exist"}}, request=req)
+    with caplog.at_level("WARNING", logger="dispute_copilot.ai"):
+        log_llm_failure("analyze", httpx.HTTPStatusError("x", request=req, response=resp))
+    assert "HTTP 404" in caplog.text and "does not exist" in caplog.text and "SECRETKEY" not in caplog.text

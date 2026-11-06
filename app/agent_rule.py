@@ -160,6 +160,22 @@ class AgentRuleState(TypedDict, total=False):
     recommendation: AIRecommendation | None
 
 
+def log_llm_failure(step: str, exc: Exception) -> None:
+    """Model calls fail soft, but a silent fallback hides a bad key or model name. Log the error type, the HTTP
+    status and the provider's own error message (e.g. "model does not exist"); never the request, which carries
+    buyer text, and never a key."""
+    resp = getattr(exc, "response", None)
+    status, why = getattr(resp, "status_code", None), ""
+    try:
+        err = resp.json().get("error") if resp is not None else None
+        why = str(err.get("message") if isinstance(err, dict) else err or "")[:200].replace("\n", " ")
+    except Exception:
+        pass
+    logging.getLogger("dispute_copilot.ai").warning(
+        "LLM %s failed: %s%s%s; using fallback", step, type(exc).__name__,
+        f" (HTTP {status})" if status else "", f": {why}" if why else "")
+
+
 def ai_recommend_action(
     d: Dispute,
     ev: MerchantEvidence,
@@ -200,9 +216,7 @@ def ai_recommend_action(
     try:
         out = llm.complete(AI_RECOMMEND_SYSTEM, facts)
     except Exception as exc:
-        status = getattr(getattr(exc, "response", None), "status_code", None)
-        logging.getLogger("dispute_copilot.ai").warning(
-            "LLM recommend failed: %s%s", type(exc).__name__, f" (HTTP {status})" if status else "")
+        log_llm_failure("recommend", exc)
         return None
 
     parsed = _parse_json_block(out)
