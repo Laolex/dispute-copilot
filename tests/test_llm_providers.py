@@ -115,3 +115,34 @@ def test_groq_reasoning_model_gets_low_effort_and_room_to_answer():
     plain._http = httpx.Client(transport=httpx.MockTransport(handler))
     plain.complete("s", "u", max_tokens=600)
     assert "reasoning_effort" not in seen and seen["max_tokens"] == 600
+
+
+def _groq(model, handler):
+    import httpx
+    from app.llm_providers import GroqLLM
+    g = GroqLLM(model, api_key="k")
+    g._http = httpx.Client(transport=httpx.MockTransport(handler))
+    return g
+
+
+def test_gpt_oss_gets_short_hidden_reasoning_and_a_bigger_budget():
+    import httpx, json
+    seen = []
+
+    def h(req):
+        seen.append(json.loads(req.content))
+        return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
+    assert _groq("openai/gpt-oss-20b", h).complete("s", "u", 600) == "ok"
+    assert seen[0]["reasoning_effort"] == "low" and seen[0]["include_reasoning"] is False and seen[0]["max_tokens"] >= 2000
+
+
+def test_reasoning_options_rejected_with_400_retry_once_without_them_and_other_models_never_get_them():
+    import httpx, json
+    seen = []
+
+    def h(req):
+        b = json.loads(req.content); seen.append(b)
+        return httpx.Response(400, json={}) if "reasoning_effort" in b else httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
+    assert _groq("openai/gpt-oss-20b", h).complete("s", "u") == "ok" and len(seen) == 2 and "reasoning_effort" not in seen[1]
+    seen.clear()
+    assert _groq("qwen/qwen3.8-27b", h).complete("s", "u") == "ok" and len(seen) == 1 and "reasoning_effort" not in seen[0]

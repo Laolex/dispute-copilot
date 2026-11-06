@@ -62,19 +62,22 @@ class GroqLLM:
     def complete(self, system: str, user: str, max_tokens: int = 600) -> str:
         body = {
             "model": self._model,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
+            "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
             "max_tokens": max_tokens,
             "temperature": 0.3,
         }
-        if "gpt-oss" in self._model:
-            # Reasoning models spend completion tokens thinking before they answer. Keep that short and leave
-            # room, otherwise a 600-token cap can be used up before any answer text is produced.
-            body["reasoning_effort"] = "low"
+        extras: dict = {}
+        if self._model.startswith("openai/gpt-oss"):
+            # Reasoning models spend the token budget on hidden reasoning first; with a small cap the visible answer
+            # comes back empty. Keep reasoning short, hide it, and leave room for the answer.
+            extras = {"reasoning_effort": "low", "include_reasoning": False}
             body["max_tokens"] = max(max_tokens, 2000)
-        r = self._http.post("https://api.groq.com/openai/v1/chat/completions", json=body)
+        r = self._post({**body, **extras})
+        if r.status_code == 400 and extras:        # a model that rejects the reasoning options: retry plain once
+            r = self._post(body)
         r.raise_for_status()
         return r.json()["choices"][0]["message"].get("content") or ""
+
+    def _post(self, payload: dict) -> httpx.Response:
+        return self._http.post("https://api.groq.com/openai/v1/chat/completions", json=payload)
 
