@@ -127,3 +127,12 @@ def test_page_and_api_show_risk_escaped():
     page = client.get(f"/proposals/{pid}", auth=AUTH).text
     assert "Risk signals" in page and "High risk indicators" in page and "Repeat disputer" in page
     assert client.get("/api/proposals", auth=AUTH).json()[0]["risk"] == "high"
+
+
+def test_a_dispute_dated_after_this_one_is_not_a_prior():
+    assert "REPEAT_BUYER" not in ids(risk(others=[other(1, when="2030-01-01T00:00:00.000Z")]))
+
+
+def test_different_currencies_are_not_compared_and_never_raise_the_level():
+    r = risk(raw(dispute_amount={"currency_code": "NGN", "value": "50000.00"}, gross_amount={"currency_code": "USD", "value": "25.00"}))
+    assert "AMOUNT_EXCEEDS_PAYMENT" not in ids(r) and "AMOUNT_CURRENCY_MISMATCH" in ids(r, "info") and r["level"] == "low"

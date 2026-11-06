@@ -195,7 +195,7 @@ is sent once; failures are audited and never block ingestion. Setup is in `DEPLO
 
 ## Tests
 
-207 tests (two drive a real browser and skip themselves unless `pip install playwright && playwright install chromium`
+209 tests (two drive a real browser and skip themselves unless `pip install playwright && playwright install chromium`
 has been run): the rules against fixtures captured from real sandbox responses, the audit chain and tamper
 detection, the proposal state machine, the executor's refusal paths (stale, link gone, foreign host, missing
 files), webhook forgery and replay, prompt-injection handling, and the web layer (auth, CSRF, escaping).

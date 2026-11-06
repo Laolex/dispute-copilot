@@ -61,14 +61,19 @@ def assess_risk(d, raw: dict, ev, others: Iterable[dict] = ()) -> dict:
             f"{len(same_tx)} other dispute(s) already exist for this payment.")
     if me and opened:
         recent = [o for o in others if o not in same_tx and _buyer_key(o) == me
-                  and (_t(o.get("create_time")) or opened) >= opened - timedelta(days=REPEAT_WINDOW_DAYS)]
+                  and opened - timedelta(days=REPEAT_WINDOW_DAYS) <= (_t(o.get("create_time")) or opened) <= opened]
         if recent:
             n = len(recent) + 1
             add("REPEAT_BUYER", "high" if len(recent) >= 2 else "warn", "Repeat disputer",
                 f"This buyer has opened {n} disputes with you in {REPEAT_WINDOW_DAYS} days.")
 
     gross, claimed = _num((tx.get("gross_amount") or {}).get("value")), _num((raw.get("dispute_amount") or {}).get("value"))
-    if gross is not None and claimed is not None and claimed > gross:
+    g_cur = (tx.get("gross_amount") or {}).get("currency_code")
+    c_cur = (raw.get("dispute_amount") or {}).get("currency_code")
+    if gross is not None and claimed is not None and g_cur and c_cur and g_cur != c_cur:
+        add("AMOUNT_CURRENCY_MISMATCH", "info", "Amounts are in different currencies",
+            f"The dispute is in {c_cur} but the payment is in {g_cur}, so they were not compared.")
+    elif gross is not None and claimed is not None and claimed > gross:
         add("AMOUNT_EXCEEDS_PAYMENT", "high", "Claimed amount exceeds the payment",
             f"The dispute asks for {claimed} but the payment was {gross}.")
 
@@ -80,9 +85,10 @@ def assess_risk(d, raw: dict, ev, others: Iterable[dict] = ()) -> dict:
             add("CLAIM_CONTRADICTS_RECORDS", "warn", "Buyer says not received, records show delivery",
                 "Your records show a verified delivery for this order.")
         elif not d.is_digital and opened and paid and opened - paid < timedelta(hours=PREMATURE_HOURS):
-            hrs = max(0, int((opened - paid).total_seconds() // 3600))
+            mins = max(0, int((opened - paid).total_seconds() // 60))
+            ago = f"{mins} minute(s)" if mins < 120 else f"{mins // 60} hour(s)"
             add("PREMATURE_NOT_RECEIVED", "info", "Non-delivery claimed very soon after payment",
-                f"Opened {hrs} hour(s) after paying; the item may still be in transit.")
+                f"Opened {ago} after paying; the item may still be in transit.")
 
     if opened and paid and timedelta(0) <= opened - paid < timedelta(minutes=FAST_MINUTES):
         add("DISPUTED_WITHIN_MINUTES", "info", "Disputed within minutes of paying",
