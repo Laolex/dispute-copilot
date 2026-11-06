@@ -26,7 +26,7 @@ class OllamaLLM:
 
     def __init__(self, model: str = "llama3", base_url: str = "http://localhost:11434") -> None:
         self.name = f"ollama-{model}"
-        self._model = model
+        self._model = model.strip()
         self._base = base_url.rstrip("/")
         self._http = httpx.Client(timeout=60)
 
@@ -51,7 +51,7 @@ class GroqLLM:
     def __init__(self, model: str = "llama-3.1-8b-instant", api_key: str | None = None) -> None:
         self.name = f"groq-{model}"
         self._model = model
-        self._key = api_key or os.environ.get("GROQ_API_KEY", "")
+        self._key = (api_key or os.environ.get("GROQ_API_KEY", "")).strip()
         if not self._key:
             raise ValueError("GROQ_API_KEY is required for GroqLLM")
         self._http = httpx.Client(

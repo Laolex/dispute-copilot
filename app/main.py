@@ -25,21 +25,26 @@ from .web import create_app
 
 settings = Settings.from_env()
 
-_provider = os.environ.get("DC_LLM_PROVIDER", "auto").lower()
+def _env(name: str, default: str = "") -> str:
+    """Strip whitespace: a pasted trailing newline in a model name or key is a classic silent 404/401."""
+    return os.environ.get(name, default).strip().strip("'\"")
+
+
+_provider = (_env("DC_LLM_PROVIDER", "auto") or "auto").lower()
 _llm = None
 
 if _provider == "anthropic":
     if os.environ.get("ANTHROPIC_API_KEY"):
-        _llm = AnthropicLLM(os.environ.get("DC_MODEL", "claude-haiku-5-5"))
+        _llm = AnthropicLLM((_env("DC_MODEL") or "claude-haiku-5-5"))
 elif _provider == "groq":
-    _llm = GroqLLM(os.environ.get("DC_MODEL", "llama-3.1-8b-instant"))
+    _llm = GroqLLM((_env("DC_MODEL") or "llama-3.1-8b-instant"))
 elif _provider == "ollama":
-    _llm = OllamaLLM(os.environ.get("DC_MODEL", "llama3"))
+    _llm = OllamaLLM((_env("DC_MODEL") or "llama3"))
 elif _provider == "auto":
     if os.environ.get("ANTHROPIC_API_KEY"):
-        _llm = AnthropicLLM(os.environ.get("DC_MODEL", "claude-haiku-5-5"))
+        _llm = AnthropicLLM((_env("DC_MODEL") or "claude-haiku-5-5"))
     elif os.environ.get("GROQ_API_KEY"):
-        _llm = GroqLLM(os.environ.get("DC_MODEL", "llama-3.1-8b-instant"))
+        _llm = GroqLLM((_env("DC_MODEL") or "llama-3.1-8b-instant"))
     # auto never falls back to Ollama: a hosted deploy has no localhost model, so every dispute would wait on a dead socket.
 else:
     raise ValueError(f"unknown DC_LLM_PROVIDER: {_provider}")
