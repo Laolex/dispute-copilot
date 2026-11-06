@@ -6,6 +6,10 @@ AI provider selection via DC_LLM_PROVIDER:
   - ollama:    Local Ollama (completely free, no key; run `ollama pull llama3` first)
   - auto:      anthropic if ANTHROPIC_API_KEY, else groq if GROQ_API_KEY, else offline fallback (default).
                Ollama is used only when DC_LLM_PROVIDER=ollama.
+
+Optional alerts (one-way; approval stays in the console): TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID, and/or
+TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN + TWILIO_WHATSAPP_FROM + WHATSAPP_TO; DC_PUBLIC_URL (https) adds a link;
+DC_NOTIFY_HOURS (default 48) sets the deadline warning window.
 """
 
 import os
@@ -13,6 +17,7 @@ import os
 from .agent import AnthropicLLM, build_agent
 from .config import Settings
 from .llm_providers import GroqLLM, OllamaLLM
+from .notify import from_env as notifier_from_env
 from .orders import OrderStore
 from .paypal import PayPalClient
 from .store import Store
@@ -40,7 +45,9 @@ else:
     raise ValueError(f"unknown DC_LLM_PROVIDER: {_provider}")
 
 agent = build_agent(_llm)
-app = create_app(PayPalClient(settings), Store(os.environ.get("DC_DB", "dispute_copilot.db")),
+_store = Store(os.environ.get("DC_DB", "dispute_copilot.db"))
+notifier = notifier_from_env(_store, os.environ)   # Telegram / WhatsApp alerts, if configured
+app = create_app(PayPalClient(settings), _store,
                  OrderStore(os.environ.get("DC_ORDERS", "data/orders.json")), settings.base_url,
                  os.environ.get("DC_ADMIN_PASSWORD", ""), agent,
                  os.environ.get("DC_DOCS", "data/docs"), os.environ.get("PAYPAL_WEBHOOK_ID") or None)

@@ -31,6 +31,21 @@ Notes
   them, commit and deploy.
 - A service with an attached disk cannot be scaled to several instances. One instance is what this app wants.
 
+## Alerts (optional): Telegram or WhatsApp
+
+One-way notifications: a new dispute needing a decision, a response deadline within 48 hours, and an execution whose
+result is unknown. They carry the dispute id, amount, reason, the policy's proposed action, the due date and a link.
+They never carry buyer text or evidence, and a chat message cannot approve anything.
+
+- **Telegram:** talk to `@BotFather`, run `/newbot`, copy the token. Send your new bot any message, then open
+  `https://api.telegram.org/bot<TOKEN>/getUpdates` and copy `message.chat.id`. Set `TELEGRAM_BOT_TOKEN`,
+  `TELEGRAM_CHAT_ID` and `DC_PUBLIC_URL` (your https service URL, for the link).
+- **WhatsApp:** through Twilio. In the Twilio console enable the WhatsApp sandbox, join it from your phone, then set
+  `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_FROM` (e.g. `whatsapp:+14155238886`) and
+  `WHATSAPP_TO` (`whatsapp:+234...`). Going beyond the sandbox needs a verified WhatsApp Business sender and approved
+  message templates.
+- Each alert is sent at most once. A failed send is recorded as `notify.failed` in the audit log and never blocks anything.
+
 ## Option B: your own server (Docker + Caddy)
 
 Use an isolated small instance (for example Ubuntu 24.04 on EC2 or Lightsail, ports 80/443 open, SSH from your IP only).

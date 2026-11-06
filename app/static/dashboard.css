@@ -26,3 +26,10 @@
 .ag-cell .pill{line-height:1.3;vertical-align:middle;text-transform:none}
 .two{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:17px;margin-top:17px}.two .audit-card{margin-top:0}
 @media(max-width:1050px){.two{grid-template-columns:1fr}}
+.chips{display:flex;gap:6px;flex-wrap:wrap}.chip{border:1px solid var(--line);background:#fff;color:#4b5b75;border-radius:999px;padding:6px 12px;font:600 12px system-ui,sans-serif;cursor:pointer}
+.chip[aria-pressed=true]{background:var(--blue);border-color:var(--blue);color:#fff}.chip:focus-visible,.btn-sm:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.btn-sm{padding:7px 12px;font-size:12px}.grid.grid-auto{height:auto;min-height:0}
+.grid-auto .ag-cell{line-height:1.45;padding-top:10px;padding-bottom:10px;display:flex;align-items:flex-start}
+.grid-auto .ag-cell .pill{margin-top:1px}
+.pill-high{background:var(--red-soft);color:var(--red)}.pill-elevated,.pill-warn{background:var(--amber-soft);color:var(--amber)}
+.pill-low,.pill-info{background:#f0f2f5;color:#5d6a7c}

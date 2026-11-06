@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 from .docs import missing_documents
 from .docs import evidence_fingerprint
 from .evidence import evidence_report
+from .risk import assess_risk
 from .models import parse_dispute
 from .orders import OrderStore
 from .paypal import PayPalClient
@@ -23,8 +24,10 @@ from .store import Store
 ACTOR = "ingester"
 
 
-def _decision_dict(dec, docs_dir=None, dispute=None, ev=None, opened_at=None) -> dict:
+def _decision_dict(dec, docs_dir=None, dispute=None, ev=None, opened_at=None, risk=None) -> dict:
     d = asdict(dec)
+    if risk is not None:
+        d["risk"] = risk   # advisory only; never read by the policy or the executor
     if dispute is not None and ev is not None:
         d["evidence_items"] = evidence_report(dispute, ev, docs_dir, opened_at)
     if dispute is not None:   # what the dispute looked like when the human was shown it; used to reconcile after a timeout
@@ -58,8 +61,12 @@ def ingest_one(c: PayPalClient, store: Store, orders: OrderStore, dispute_id: st
     # The decision depends on PayPal's data AND on our merchant records, so the proposal key covers both:
     # editing the order store re-evaluates pending disputes and supersedes a now-outdated proposal.
     key = f"{r.body.get('update_time') or ''}#{evidence_fingerprint(ev, docs_dir)}"
-    pid = store.create_proposal(d.id, key, _decision_dict(dec, docs_dir, d, ev, r.body.get("create_time")))
+    risk = assess_risk(d, r.body, ev, store.other_disputes(d.id))
+    pid = store.create_proposal(d.id, key, _decision_dict(dec, docs_dir, d, ev, r.body.get("create_time"), risk))
     if pid:
+        if risk["level"] != "low":
+            store.audit(ACTOR, "risk.flagged", {"proposal_id": pid, "dispute_id": d.id, "level": risk["level"],
+                                                 "signals": [x["id"] for x in risk["signals"] if x["severity"] != "info"]})
         store.audit(ACTOR, "proposal.created", {"proposal_id": pid, "dispute_id": d.id, "action": dec.action.value,
                                                  "rule": dec.rule_id, "executable": dec.executable})
         if agent is not None:

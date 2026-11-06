@@ -81,6 +81,25 @@ flowchart LR
   cover the look-alike cases.
 - **One contest threshold.** `min_contest_amount` applies to every dispute reason: below it the policy accepts.
 
+## Risk signals
+
+Each proposal carries advisory risk indicators (`app/risk.py`), computed from the dispute, the merchant's records and
+the disputes this app has already seen. They are heuristics with plain-language reasons, **not a fraud score**: we have
+no outcome data to calibrate a probability, so none is claimed.
+
+| Signal | Severity | Fires when |
+|---|---|---|
+| Repeat disputer | warn / high | the same buyer opened 1 / 2+ other disputes with you in 180 days |
+| Same payment disputed again | warn | another dispute exists for the same payment |
+| Claimed amount exceeds the payment | high | the dispute asks for more than was paid |
+| Buyer says not received, records show use or delivery | warn | access log (digital) or verified delivery (physical) contradicts a not-received claim |
+| Non-delivery claimed very soon after payment; disputed within minutes; no contact with the merchant first | info | context only; never raises the level |
+
+The level is *high* with any high signal or three warnings, *elevated* with one or more warnings, else *low*. Elevated
+and high raise a "risk flagged" alert (signal titles only, never buyer identifiers), a column and quick view in the grid, and
+a panel on the review page. Signals never change the policy's decision, the PayPal action or the evidence plan (a test
+checks the stored decision equals the policy's own output for a buyer flagged high).
+
 ## Console (AG Grid)
 
 ![Dispute desk](docs/screenshots/overview.png)
@@ -95,6 +114,12 @@ vendored in `app/static/` with its licence, so the page loads no code from a CDN
   "claim does not match reason" flag from the agent's analysis;
 - summary tiles (awaiting approval, amount at stake, nearest deadline, executed) and an audit detail pane that
   shows each entry's payload and whether the hash chain verifies;
+- quick-view chips (awaiting approval, needs attention, AI disagrees) through AG Grid's external-filter API, and a
+  "n of m rows" counter;
+- CSV export of the queue and the audit trail (cells that start with `=`, `+`, `-` or `@` are neutralised so a hostile
+  dispute id cannot become a spreadsheet formula);
+- columns, sort and filters remembered per viewer (`initialState`, localStorage, optional);
+- a third grid on each proposal showing the evidence provenance report (verified / unverified / missing / conflict);
 - auto-refresh every 20 seconds.
 
 Every value is rendered with `textContent`, never as HTML, and pages are served with a strict
@@ -161,20 +186,21 @@ without a restart. See `DEPLOY.md` for the Docker + HTTPS deployment and webhook
 (`check`, `order`, `capture`, `list`, `show`, `act`, `sandbox-adjudicate`, `webhook-create`, `webhook-list`).
 State-changing commands need `--yes`. A buyer opens the dispute in the sandbox UI.
 
+## Alerts
+
+Optional one-way alerts to Telegram and/or WhatsApp (Twilio): new dispute, deadline within 48 hours, unknown
+execution result. They carry only the dispute id, amount, reason, proposed action, due date and a link, never buyer
+text or evidence, and nothing in chat can approve or reject: approval stays in the authenticated console. Each alert
+is sent once; failures are audited and never block ingestion. Setup is in `DEPLOY.md`.
+
 ## Tests
 
-181 tests pass, 1 skips (browser tests need `pip install playwright && playwright install chromium`): the rules
-against fixtures captured from real sandbox responses, the audit chain and tamper detection, the proposal state
-machine, the executor's refusal and recovery paths (stale, link gone, foreign host, missing files, uncertain
-writes), webhook forgery and replay, prompt-injection handling, evidence reporting, and the web layer (auth,
-CSRF, escaping).
+207 tests (two drive a real browser and skip themselves unless `pip install playwright && playwright install chromium`
+has been run): the rules against fixtures captured from real sandbox responses, the audit chain and tamper
+detection, the proposal state machine, the executor's refusal paths (stale, link gone, foreign host, missing
+files), webhook forgery and replay, prompt-injection handling, and the web layer (auth, CSRF, escaping).
 
 ## What's next
-
-**Done since v4:** evidence provenance reporting (`app/evidence.py`) shows what the merchant knew at
-decision time with verified / unverified / missing / conflict statuses, and execution recovery
-(`uncertain` state, `reconcile`, retry with same idempotency key, `abandon`) handles timeouts and 5xx
-responses without double-submitting.
 
 **Real order integration (the main gap).** Today the merchant's evidence comes from a JSON file. The policy
 already asks one narrow question, "what can we prove about this PayPal transaction?", so production means an
@@ -201,7 +227,7 @@ sandbox guard, and per-merchant authorisation through PayPal's partner/third-par
 `send_message`, appeals, and the remaining dispute reasons (billing errors, unauthorised use, credit not
 processed), each with its own rule and evidence plan.
 
-**Product.** Deadline alerts (email or chat), per-merchant policy thresholds, and role separation so the person
+**Product.** Per-merchant policy thresholds, and role separation so the person
 who approves is not the person who administers the instance.
 
 ## Limitations (stated plainly)
@@ -214,15 +240,6 @@ who approves is not the person who administers the instance.
 - The `accept_claim` request uses `accept_claim_type: REFUND`, the only type exercised so far.
 - Sandbox dispute states move slowly and asynchronously; the demo relies on PayPal's sandbox adjudication
   helper to reach a resolved state.
-
-## Honest limitations
-
-- **Real model call never run.** The Anthropic/Groq path is wired in (`DC_LLM_PROVIDER=groq` or `anthropic`), but no real model output has been generated yet — the dev run has used the heuristic fallback only. Add `ANTHROPIC_API_KEY` or `GROQ_API_KEY` and create one dispute to confirm the proposal page shows a real claim analysis and AI recommendation instead of "heuristic".
-- **Docker / Render build untested.** `Dockerfile`, `docker-compose.yml`, `Caddyfile`, and `render.yaml` exist but haven't been deployed. First `uvicorn app.main:app` run inside the container may need one or two fixes.
-- **Retry idempotency unconfirmed.** Whether PayPal's sandbox accepts a retried POST with the same `PayPal-Request-Id` and returns the original result is untested live. Approve an action, retry with the same request id, and check.
-- **Merchant orders are a JSON file.** `data/orders.json` is keyed by PayPal `seller_transaction_id`. A real store would need an adapter behind the same `OrderStore.evidence_for()` interface — the policy already asks only "what can we prove about this transaction?".
-
-None of these affect the safety invariants: the executor re-fetches and re-checks before every send, webhook signatures are verified before anything is processed, and nothing auto-executes without human approval.
 
 ## License
 

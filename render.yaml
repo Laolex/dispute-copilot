@@ -22,8 +22,12 @@ services:
         sync: false
       - key: DC_ADMIN_PASSWORD
         generateValue: true    # read it in the dashboard (Environment tab) to log in
-      - key: DC_LLM_PROVIDER
-        value: groq
       - key: DC_MODEL
-        value: llama-3.1-8b-instant
+        value: claude-haiku-5-5
+      - key: DC_PUBLIC_URL
+        sync: false            # https://<service>.onrender.com ; adds a link to alerts (optional)
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false            # optional alerts; leave empty to skip
+      - key: TELEGRAM_CHAT_ID
+        sync: false
       # Added in the dashboard later: PAYPAL_WEBHOOK_ID (after webhook-create), ANTHROPIC_API_KEY (optional)

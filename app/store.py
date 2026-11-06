@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS proposals(
   id INTEGER PRIMARY KEY AUTOINCREMENT, dispute_id TEXT NOT NULL, source_update TEXT NOT NULL,
   decision TEXT NOT NULL, draft TEXT, state TEXT NOT NULL, decided_by TEXT, result TEXT,
   created_at TEXT NOT NULL, decided_at TEXT, UNIQUE(dispute_id, source_update));
+CREATE TABLE IF NOT EXISTS notifications(key TEXT PRIMARY KEY, sent_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS webhook_events(
   id TEXT PRIMARY KEY, event_type TEXT, received_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS audit(
@@ -52,8 +53,27 @@ class Store:
         self._db = sqlite3.connect(path, check_same_thread=False)
         self._db.row_factory = sqlite3.Row
         self._lock = threading.RLock()
+        self._listeners: list = []
         with self._lock:
             self._db.executescript(SCHEMA)
+
+    # ---- events (used for notifications; a listener can never break a store operation) ----
+    def subscribe(self, fn) -> None:
+        self._listeners.append(fn)
+
+    def _emit(self, event: str, pid: int) -> None:
+        for fn in list(self._listeners):
+            try:
+                fn(event, pid)
+            except Exception:  # noqa: BLE001
+                pass
+
+    def claim_notification(self, key: str) -> bool:
+        """True the first time a notification key is claimed, so each alert is sent at most once."""
+        with self._lock:
+            cur = self._db.execute("INSERT OR IGNORE INTO notifications(key, sent_at) VALUES(?,?)", (key, _now()))
+            self._db.commit()
+            return cur.rowcount == 1
 
     # ---- audit ---------------------------------------------------------
     def audit(self, actor: str, event: str, payload: dict | None = None) -> int:
@@ -102,6 +122,11 @@ class Store:
             r = self._db.execute("SELECT raw FROM disputes WHERE id=?", (did,)).fetchone()
             return json.loads(r["raw"]) if r else None
 
+    def other_disputes(self, exclude_id: str) -> list[dict]:
+        """Raw bodies of every other dispute seen so far (used for repeat-buyer risk signals)."""
+        with self._lock:
+            return [json.loads(r["raw"]) for r in self._db.execute("SELECT raw FROM disputes WHERE id<>?", (exclude_id,))]
+
     # ---- webhook idempotency -------------------------------------------
     def claim_webhook_event(self, event_id: str, event_type: str) -> bool:
         """True the first time an event id is seen, False for a replay or PayPal retry."""
@@ -124,7 +149,9 @@ class Store:
                 "INSERT INTO proposals(dispute_id, source_update, decision, draft, state, created_at) VALUES(?,?,?,?, 'PENDING', ?)",
                 (dispute_id, source_update, _canon(decision), draft, _now()))
             self._db.commit()
-            return cur.lastrowid
+            pid = cur.lastrowid
+        self._emit("proposal.created", pid)
+        return pid
 
     def supersede_pending(self, dispute_id: str) -> list[int]:
         """Retire pending proposals that can no longer be acted on (PayPal stopped offering the action)."""
@@ -180,6 +207,9 @@ class Store:
             self._db.execute("UPDATE proposals SET state=?, decided_by=COALESCE(?, decided_by), result=COALESCE(?, result), decided_at=? WHERE id=?",
                              (new, by, _canon(result) if result is not None else None, _now(), pid))
             self._db.commit()
+            previous = r["state"]
+        if new != previous:
+            self._emit(f"proposal.{new.lower()}", pid)
 
     @staticmethod
     def _row(r) -> dict | None:

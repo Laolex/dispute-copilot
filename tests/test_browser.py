@@ -29,19 +29,21 @@ def _seed(store: Store) -> None:
     base = json.loads(FX.read_text())["body"]
     now = datetime.now(timezone.utc)
 
-    def add(did, amount, due_days, action, rel, state):
+    def add(did, amount, due_days, action, rel, state, risk=None):
         b = json.loads(json.dumps(base))
         b.update(dispute_id=did, update_time=now.isoformat(), dispute_amount={"currency_code": "USD", "value": amount},
                  seller_response_due_date=(now + timedelta(days=due_days)).isoformat().replace("+00:00", "Z"))
         store.upsert_dispute(b)
         dec = {"action": action, "rule_id": "R", "reasons": ["r"], "link_rel": rel, "executable": True,
                "evidence_plan": [], "documents": [], "requires_human": True}
+        if risk:
+            dec["risk"] = {"level": risk, "signals": [], "basis": "b"}
         pid = store.create_proposal(did, "k" + did, dec)
         if state == "EXECUTED":
             store.transition(pid, "APPROVED", by="t"); store.transition(pid, "EXECUTED", result={"ok": True})
 
     add("PP-R-AAA-1", "25.00", 9, "contest", "provide_evidence", "EXECUTED")
-    add("PP-R-BBB-2", "40.00", 2, "contest", "escalate", "PENDING")
+    add("PP-R-BBB-2", "40.00", 2, "contest", "escalate", "PENDING", risk="high")
     add("PP-R-CCC-3", "12.00", 6, "accept", "accept_claim", "PENDING")
     add(XSS, "9.99", 4, "accept", "accept_claim", "PENDING")
     store.audit("webhook", "webhook.rejected", {"reason": "signature verification failed", "note": XSS})
@@ -98,4 +100,39 @@ def test_audit_grid_shows_hostile_payload_as_text_and_chain_status(page, server)
     assert "hash chain verified" in page.locator("#count").inner_text()
     assert page.evaluate("window.__xss === 1") is False
     assert page.evaluate("document.querySelectorAll('img[src=x]').length") == 0
+    assert page.problems == []
+
+
+def test_quick_views_filter_the_queue_and_choice_survives_reload_state(page, server):
+    page.goto(server + "/"); page.wait_for_selector(".ag-row")
+    page.get_by_role("button", name="Awaiting approval").click()
+    sync_api.expect(page.locator(".ag-row")).to_have_count(3)          # 3 of the 4 seeded proposals are PENDING
+    assert page.locator("#shown").inner_text() == "3 of 4 rows"
+    page.get_by_role("button", name="All", exact=True).click()
+    sync_api.expect(page.locator(".ag-row")).to_have_count(4)
+    # saved grid state: a typed column filter is remembered after a reload (per-viewer localStorage)
+    page.fill("#q", "")
+    page.locator(".ag-header-cell[col-id='dispute_id'] input").first.fill("BBB")
+    sync_api.expect(page.locator(".ag-row")).to_have_count(1)
+    page.reload(); page.wait_for_selector(".ag-row")
+    sync_api.expect(page.locator(".ag-row")).to_have_count(1)
+    assert page.problems == []
+
+
+def test_csv_export_neutralises_formula_injection(page, server):
+    page.goto(server + "/audit"); page.wait_for_selector(".ag-row")
+    with page.expect_download() as dl:
+        page.click("#export")
+    text = open(dl.value.path(), encoding="utf-8").read()
+    assert "webhook.rejected" in text
+    for line in text.splitlines():
+        for cell in line.split(","):
+            assert not cell.strip('"').startswith(("=", "+", "@")), line
+
+
+def test_risk_column_and_chip(page, server):
+    page.goto(server + "/"); page.wait_for_selector(".ag-row")
+    assert page.locator(".ag-row", has_text="High risk").count() == 1
+    page.get_by_role("button", name="Risk flagged").click()
+    sync_api.expect(page.locator(".ag-row")).to_have_count(1)
     assert page.problems == []

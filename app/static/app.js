@@ -25,6 +25,33 @@
     });
   }
 
+
+  // ---- shared grid helpers -------------------------------------------------------------------
+  function store(key) {   // per-viewer convenience only: remembers columns, sort and filters; the page works without it
+    return {
+      load: function () { try { var v = window.localStorage.getItem(key); return v ? JSON.parse(v) : undefined; } catch (e) { return undefined; } },
+      save: function (state) { try { window.localStorage.setItem(key, JSON.stringify(state)); } catch (e) { /* private window */ } }
+    };
+  }
+  function csvSafe(v) {   // spreadsheet formula injection: a cell starting with = + - @ would run in Excel
+    var t = v == null ? "" : String(v);
+    return /^[=+\-@\t\r]/.test(t) ? "'" + t : t;
+  }
+  function wireExport(api, name) {
+    var b = document.getElementById("export");
+    if (!b) return;
+    b.addEventListener("click", function () {
+      api.exportDataAsCsv({ fileName: name + "-" + new Date().toISOString().slice(0, 10) + ".csv",
+        processCellCallback: function (p) { return csvSafe(p.formatValue ? p.formatValue(p.value) : p.value); } });
+    });
+  }
+  function wireCount(api, total) {
+    var el = document.getElementById("shown");
+    if (!el) return;
+    function upd() { var n = api.getDisplayedRowCount(); el.textContent = n === total() ? n + " rows" : n + " of " + total() + " rows"; }
+    api.addEventListener("modelUpdated", upd); upd();
+  }
+
   // ---- proposals ----------------------------------------------------------------------------
   var ACTIONS = { contest: ["Contest", "ok"], accept: ["Accept", "warn"], review: ["Needs review", "neutral"], wait: ["Wait", "neutral"] };
   var STATES = { PENDING: "accent", APPROVED: "accent", EXECUTED: "ok", FAILED: "bad", REJECTED: "neutral", SUPERSEDED: "neutral", UNCERTAIN: "warn" };
@@ -56,6 +83,11 @@
     if (p.data.mismatch) return pill("claim ≠ reason", "bad");
     return el("span", "muted", (p.data.claim_type || "").replace(/_/g, " "));
   }
+  function riskCell(p) {
+    if (p.value === "high") return pill("High risk", "bad");
+    if (p.value === "elevated") return pill("Risk flagged", "warn");
+    return el("span", "muted", p.value ? "—" : "");
+  }
   function stateCell(p) { return pill(p.value, STATES[p.value] || "neutral"); }
   function money(p) {
     if (p.value == null) return "";
@@ -65,15 +97,16 @@
 
   function proposalColumns() {
     return [
-      { headerName: "#", field: "id", width: 80, minWidth: 70, sort: "desc", cellRenderer: idCell, floatingFilter: false, filter: "agNumberColumnFilter" },
-      { headerName: "Dispute", field: "dispute_id", width: 180, minWidth: 150, cellClass: "mono" },
-      { headerName: "Proposed action", field: "action", width: 280, minWidth: 210, cellRenderer: actionCell },
-      { headerName: "Amount", field: "amount", width: 110, minWidth: 90, type: "rightAligned", valueFormatter: money, floatingFilter: false, filter: "agNumberColumnFilter" },
-      { headerName: "Respond by", colId: "due", width: 130, minWidth: 110, floatingFilter: false, filter: "agNumberColumnFilter",
+      { headerName: "#", field: "id", width: 64, minWidth: 56, sort: "desc", cellRenderer: idCell, floatingFilter: false, filter: "agNumberColumnFilter" },
+      { headerName: "Dispute", field: "dispute_id", width: 150, minWidth: 140, cellClass: "mono" },
+      { headerName: "Proposed action", field: "action", width: 230, minWidth: 180, cellRenderer: actionCell },
+      { headerName: "Amount", field: "amount", width: 100, minWidth: 80, type: "rightAligned", valueFormatter: money, floatingFilter: false, filter: "agNumberColumnFilter" },
+      { headerName: "Respond by", colId: "due", width: 120, minWidth: 100, floatingFilter: false, filter: "agNumberColumnFilter",
         valueGetter: function (p) { return p.data.due ? Date.parse(p.data.due) : null; }, cellRenderer: dueCell },
       { headerName: "Stage", field: "stage", width: 110, minWidth: 90, hide: true },
-      { headerName: "Claim", field: "claim_type", width: 150, minWidth: 130, cellRenderer: claimCell },
-      { headerName: "State", field: "state", width: 120, minWidth: 110, cellRenderer: stateCell },
+      { headerName: "Claim", field: "claim_type", width: 130, minWidth: 110, cellRenderer: claimCell },
+      { headerName: "Risk", field: "risk", width: 120, minWidth: 100, cellRenderer: riskCell },
+      { headerName: "State", field: "state", width: 110, minWidth: 100, cellRenderer: stateCell },
       { headerName: "Rule", field: "rule_id", width: 210, minWidth: 150, cellClass: "mono", hide: true },
       { headerName: "PayPal action", field: "link_rel", width: 160, hide: true },   // searchable via the filter box
       { headerName: "Dispute reason", field: "reason", width: 260, hide: true }
@@ -112,9 +145,22 @@
     });
   }
 
+  var VIEWS = {
+    all: function () { return true; },
+    pending: function (r) { return r.state === "PENDING"; },
+    attention: function (r) { return r.state === "APPROVED" || r.state === "UNCERTAIN"; },
+    disagree: function (r) { return !!r.ai_disagrees; },
+    risk: function (r) { return r.risk === "high" || r.risk === "elevated"; }
+  };
+  var CHIPS = [["all", "All"], ["pending", "Awaiting approval"], ["attention", "Needs attention"], ["disagree", "AI disagrees"], ["risk", "Risk flagged"]];
+
   function mountProposals(host) {
+    var saved = store("dc.grid.proposals.v1"), view = "all", all = [];
     var api = agGrid.createGrid(host, {
       theme: theme, columnDefs: proposalColumns(), rowData: [],
+      initialState: saved.load(), onStateUpdated: function (e) { saved.save(e.api.getState()); },
+      isExternalFilterPresent: function () { return view !== "all"; },
+      doesExternalFilterPass: function (node) { return VIEWS[view](node.data); },
       defaultColDef: { sortable: true, resizable: true, filter: "agTextColumnFilter", floatingFilter: true },
       rowHeight: 44, animateRows: true, tooltipShowDelay: 400,
       autoSizeStrategy: { type: "fitGridWidth" }, includeHiddenColumnsInQuickFilter: true,
@@ -125,8 +171,19 @@
     });
     var q = document.getElementById("q");
     if (q) q.addEventListener("input", function () { api.setGridOption("quickFilterText", q.value); });
+    var chips = document.getElementById("chips");
+    if (chips) CHIPS.forEach(function (c) {
+      var b = el("button", "chip", c[1]); b.type = "button"; b.setAttribute("aria-pressed", c[0] === view ? "true" : "false");
+      b.addEventListener("click", function () {
+        view = c[0];
+        Array.prototype.forEach.call(chips.children, function (x) { x.setAttribute("aria-pressed", x === b ? "true" : "false"); });
+        api.onFilterChanged();
+      });
+      chips.appendChild(b);
+    });
+    wireExport(api, "dispute-proposals"); wireCount(api, function () { return all.length; });
     function refresh() {
-      getJSON("/api/proposals").then(function (rows) { api.setGridOption("rowData", rows); renderTiles(rows); })
+      getJSON("/api/proposals").then(function (rows) { all = rows; api.setGridOption("rowData", rows); renderTiles(rows); })
         .catch(function (e) { api.setGridOption("overlayNoRowsTemplate", "<span>Could not load proposals.</span>"); console.error(e); });
     }
     refresh();
@@ -156,8 +213,10 @@
 
   function mountAudit(host) {
     var detail = document.getElementById("detail"), count = document.getElementById("count");
+    var saved = store("dc.grid.audit.v1"), total = 0;
     var api = agGrid.createGrid(host, {
       theme: theme, rowData: [],
+      initialState: saved.load(), onStateUpdated: function (e) { saved.save(e.api.getState()); },
       columnDefs: [
         { headerName: "#", field: "seq", width: 90, sort: "desc", filter: "agNumberColumnFilter" },
         { headerName: "Time", field: "ts", width: 200, valueFormatter: function (p) { return p.value ? new Date(p.value).toLocaleString() : ""; } },
@@ -173,9 +232,10 @@
     });
     var q = document.getElementById("q");
     if (q) q.addEventListener("input", function () { api.setGridOption("quickFilterText", q.value); });
+    wireExport(api, "audit-trail"); wireCount(api, function () { return total; });
     function refresh() {
       getJSON("/api/audit").then(function (res) {
-        api.setGridOption("rowData", res.rows);
+        total = res.rows.length; api.setGridOption("rowData", res.rows);
         if (count) count.textContent = res.rows.length + (res.rows.length === 1 ? " entry · " : " entries · ") + (res.ok ? "hash chain verified" : "CHAIN BROKEN at #" + res.bad_seq);
       }).catch(function (e) { console.error(e); });
     }
@@ -183,8 +243,27 @@
     setInterval(refresh, 20000);
   }
 
+  var EVIDENCE = { verified: "ok", unverified: "warn", missing: "bad", conflict: "bad" };
+  function mountEvidence(host) {
+    var api = agGrid.createGrid(host, {
+      theme: theme, rowData: [], domLayout: "autoHeight", suppressCellFocus: true,
+      defaultColDef: { sortable: true, resizable: true, wrapText: true, autoHeight: true },
+      columnDefs: [
+        { headerName: "Evidence", field: "label", flex: 2, minWidth: 180 },
+        { headerName: "Status", field: "status", width: 130, cellRenderer: function (p) { return pill(p.value, EVIDENCE[p.value] || "neutral"); } },
+        { headerName: "Detail", field: "detail", flex: 3, minWidth: 220 },
+        { headerName: "Source", field: "source", width: 160 }
+      ],
+      overlayNoRowsTemplate: "<span>No evidence items were recorded for this proposal.</span>"
+    });
+    getJSON("/api/proposals/" + encodeURIComponent(host.dataset.pid) + "/evidence")
+      .then(function (rows) { api.setGridOption("rowData", rows); }).catch(function (e) { console.error(e); });
+  }
+
   var host = document.getElementById("grid");
   if (host && window.agGrid) {
-    if (host.dataset.kind === "audit") mountAudit(host); else mountProposals(host);
+    if (host.dataset.kind === "audit") mountAudit(host);
+    else if (host.dataset.kind === "evidence") mountEvidence(host);
+    else mountProposals(host);
   }
 })();

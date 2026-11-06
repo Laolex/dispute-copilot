@@ -123,11 +123,19 @@ def create_app(client: PayPalClient, store: Store, orders: OrderStore, base_url:
                 "amount": float(d.amount) if d and d.amount is not None else None, "currency": d.currency if d else None,
                 "stage": d.stage if d else None, "reason": d.reason if d else None,
                 "claim_type": an.get("claim_type"),
+                "risk": (dec.get("risk") or {}).get("level"),
                 "ai_action": (dec.get("recommendation") or {}).get("recommended_action"),
                 "ai_disagrees": bool(dec.get("recommendation")) and dec["recommendation"].get("recommended_action") != dec["action"], "mismatch": an.get("consistent_with_reason", True) is False,
                 "due": d.seller_response_due.isoformat() if d and d.seller_response_due else None,
                 "created_at": p["created_at"], "missing_documents": len(dec.get("missing_documents") or [])})
         return JSONResponse(rows)
+
+    @app.get("/api/proposals/{pid}/evidence")
+    def api_evidence(pid: int, _: str = Depends(auth)):
+        p = store.get_proposal(pid)
+        if not p:
+            raise HTTPException(404)
+        return JSONResponse(p["decision"].get("evidence_items") or [])
 
     @app.get("/api/audit")
     def api_audit(_: str = Depends(auth)):
@@ -148,7 +156,9 @@ def create_app(client: PayPalClient, store: Store, orders: OrderStore, base_url:
                 f"{poll_form}</div><div class='stats' id='tiles'></div>"
                 "<section class='panel'><div class='panel-head'><div><h2>Dispute queue</h2>"
                 "<p>Sort, filter and search every proposal</p></div></div><div class='grid-tools'>"
-                "<input type='search' id='q' placeholder='Filter proposals (dispute, rule, state, reason...)' aria-label='Filter proposals'></div>"
+                "<input type='search' id='q' placeholder='Filter proposals (dispute, rule, state, reason...)' aria-label='Filter proposals'>"
+                "<div class='chips' id='chips' role='group' aria-label='Quick views'></div>"
+                "<span class='muted' id='shown'></span><button class='btn btn-outline btn-sm' type='button' id='export'>Export CSV</button></div>"
                 "<div id='grid' class='grid' data-kind='proposals'></div></section>"
                 "<div class='two'><section class='insight'><div class='eyebrow'>Your control centre</div><h3>Decisions stay yours.</h3>"
                 "<p>The policy proposes an action, the AI explains and drafts, and nothing reaches PayPal until you approve it. "
@@ -264,18 +274,29 @@ def create_app(client: PayPalClient, store: Store, orders: OrderStore, base_url:
                        f"<div class='panel-body'>{facts or 'No dispute data stored.'}</div></section>")
         policy_panel = (f"<section class='panel'><div class='panel-head'><div><h2>Policy assessment</h2><p>Deterministic rule · {e(dec.get('rule_id', ''))}</p></div>{_pill(action)}</div>"
                         f"<div class='panel-body'><p style='font-size:11px;color:#718096;margin:0'>Why this action was selected</p><ul class='reason-list'>{why}</ul></div></section>")
+        risk = dec.get("risk")
+        risk_panel = ""
+        if risk:
+            level = str(risk.get("level", "low"))
+            sigs = risk.get("signals") or []
+            rows = "".join(
+                f"<div class='file-row' style='align-items:flex-start'><div style='flex:1;min-width:0'><b style='color:#30425f'>{e(str(x.get('title', '')))}</b>"
+                f"<div class='case-sub' style='white-space:normal'>{e(str(x.get('detail', '')))}</div></div>{_pill(str(x.get('severity', 'info')))}</div>"
+                for x in sigs)
+            banner = {"high": "<div class='error' style='margin:0 21px 4px'><b>High risk indicators.</b> Look closely before approving anything.</div>",
+                      "elevated": "<div class='warning' style='margin:0 21px 4px'><b>Risk indicators found.</b> Review them before approving.</div>"}.get(level, "")
+            body_rows = rows or "<div class='panel-body'><p class='muted' style='font-size:12px;margin:0'>No risk signals were found for this dispute.</p></div>"
+            risk_panel = ("<section class='panel'><div class='panel-head'><div><h2>Risk signals</h2>"
+                          f"<p>Advisory indicators · they never change the policy decision</p></div>{_pill(level)}</div>{banner}"
+                          f"<div class='panel-body'>{body_rows}<p class='muted' style='font-size:10px;margin:14px 0 0'>{e(str(risk.get('basis', '')))}</p></div></section>")
         items = dec.get("evidence_items") or []
         evidence_panel = ""
         if items:
             counts = {k: sum(1 for i in items if i.get("status") == k) for k in ("verified", "unverified", "missing", "conflict")}
             summary = " · ".join(f"{n} {k}" for k, n in counts.items() if n)
-            rows = "".join(
-                f"<div class='file-row' style='align-items:flex-start'><div style='flex:1;min-width:0'><b style='color:#30425f'>{e(str(i.get('label', '')))}</b>"
-                f"<div class='case-sub' style='white-space:normal'>{e(str(i.get('detail', '')))}"
-                f"{' · source: ' + e(str(i['source'])) if i.get('source') else ''}</div></div>{_pill(str(i.get('status', 'unknown')))}</div>"
-                for i in items)
             evidence_panel = ("<section class='panel'><div class='panel-head'><div><h2>Evidence provenance</h2>"
-                              f"<p>What the merchant held when this was proposed · {e(summary)}</p></div></div><div class='panel-body'>{rows}</div></section>")
+                              f"<p>What the merchant held when this was proposed · {e(summary)}</p></div></div>"
+                              f"<div id='grid' class='grid grid-auto' data-kind='evidence' data-pid='{pid}'></div></section>")
         draft_panel = ("<section class='panel'><div class='panel-head'><div><h2>Response draft</h2><p>Generated from the available dispute context</p></div></div>"
                        f"<div class='panel-body'><div class='draft'>{e(p['draft'] or '(No response draft available)')}</div></div></section>")
         no_files = "<div class='panel-body'><p style='font-size:11px;color:#8390a3'>No files are uploaded with this action.</p></div>"
@@ -289,8 +310,8 @@ def create_app(client: PayPalClient, store: Store, orders: OrderStore, base_url:
         body = (f"<div class='content'><div class='detail-top'><a class='text-link' href='/'>← Back to dispute queue</a><span>/</span><span>Proposal #{pid}</span></div>"
                 f"<div class='heading'><div><div class='eyebrow'>Dispute review</div><h1>{e(p['dispute_id'])}</h1>"
                 f"<p>Created {e(_date(p.get('created_at')))} · Proposal #{pid}</p></div><div style='display:flex;gap:8px;align-items:center'>{_pill(action)}{_pill(p['state'])}</div></div>"
-                f"<div class='detail-layout'><div class='stack'>{facts_panel}{policy_panel}{evidence_panel}{analysis}{recommendation_html}{draft_panel}{result}</div><div class='stack'>{side}</div></div></div>")
-        return page(f"Proposal #{pid}", body, "overview")
+                f"<div class='detail-layout'><div class='stack'>{facts_panel}{risk_panel}{policy_panel}{evidence_panel}{analysis}{recommendation_html}{draft_panel}{result}</div><div class='stack'>{side}</div></div></div>")
+        return page(f"Proposal #{pid}", body, "overview", SCRIPTS if items else "")
 
     @app.post("/proposals/{pid}/{action}")
     def decide_action(pid: int, action: str, token: str = Form(...), user: str = Depends(auth)):
@@ -327,7 +348,8 @@ def create_app(client: PayPalClient, store: Store, orders: OrderStore, base_url:
         body = ("<div class='content'><div class='heading'><div><div class='eyebrow'>Accountability</div><h1>Audit trail</h1>"
                 "<p>A chronological, hash-chained record of decisions and actions. Click a row for its full payload.</p></div></div>"
                 "<section class='panel'><div class='panel-head'><div><h2>Activity history</h2><p id='count' class='muted'></p></div></div>"
-                "<div class='grid-tools'><input type='search' id='q' placeholder='Filter audit events (actor, event, payload...)' aria-label='Filter audit log'></div>"
+                "<div class='grid-tools'><input type='search' id='q' placeholder='Filter audit events (actor, event, payload...)' aria-label='Filter audit log'>"
+                "<span class='muted' id='shown'></span><button class='btn btn-outline btn-sm' type='button' id='export'>Export CSV</button></div>"
                 "<div id='grid' class='grid' data-kind='audit'></div><div id='detail' class='detail'></div></section></div>")
         return page("Audit trail", body, "audit", SCRIPTS)
 

@@ -94,4 +94,8 @@ def test_proposal_stores_the_evidence_report_and_page_shows_it():
     items = s.get_proposal(pid)["decision"]["evidence_items"]
     assert items and items[0]["status"] == "verified"
     page = client.get(f"/proposals/{pid}", auth=AUTH).text
-    assert "Evidence provenance" in page and "Digital access" in page
+    assert "Evidence provenance" in page and "data-kind='evidence'" in page      # rendered by AG Grid from the API
+    rows = client.get(f"/api/proposals/{pid}/evidence", auth=AUTH).json()
+    assert any("Digital access" in r["label"] and r["status"] == "verified" for r in rows)
+    assert client.get("/api/proposals/999/evidence", auth=AUTH).status_code == 404
+    assert client.get(f"/api/proposals/{pid}/evidence").status_code == 401
