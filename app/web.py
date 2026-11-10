@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import html
+import json
 import re
 import secrets
 from datetime import datetime
@@ -48,6 +49,14 @@ def _pill(value: str) -> str:
     safe = re.sub(r"[^a-z0-9-]", "", str(value or "unknown").lower().replace(" ", "-").replace("_", "-"))
     return f"<span class='pill pill-{safe}'>{e(str(value or 'unknown').replace('_', ' ').lower())}</span>"
 
+
+
+def _pretty(v) -> str:
+    """Readable JSON for stored results (str() would show a Python dict with single quotes and True)."""
+    try:
+        return json.dumps(v, indent=2, ensure_ascii=False, default=str)[:6000]
+    except (TypeError, ValueError):
+        return str(v)[:6000]
 
 
 def create_app(client: PayPalClient, store: Store, orders: OrderStore, base_url: str, password: str, agent=None,
@@ -269,7 +278,7 @@ def create_app(client: PayPalClient, store: Store, orders: OrderStore, base_url:
                 f"<div class='file-row'><span class='file-ico'>▤</span><span>{e(n)}</span>"
                 "<span style='margin-left:auto;color:#8b98aa'>Evidence file</span></div>" for n in dec["documents"]) + "</div>")
         result = (f"<section class='panel'><div class='panel-head'><div><h2>Execution result</h2><p>PayPal response captured by the executor</p></div></div>"
-                  f"<div class='panel-body'><pre class='result'>{e(str(p['result']))}</pre></div></section>") if p["result"] else ""
+                  f"<div class='panel-body'><pre class='result'>{e(_pretty(p['result']))}</pre></div></section>") if p["result"] else ""
         facts_panel = ("<section class='panel'><div class='panel-head'><div><h2>Dispute details</h2><p>Information retrieved from PayPal</p></div></div>"
                        f"<div class='panel-body'>{facts or 'No dispute data stored.'}</div></section>")
         policy_panel = (f"<section class='panel'><div class='panel-head'><div><h2>Policy assessment</h2><p>Deterministic rule · {e(dec.get('rule_id', ''))}</p></div>{_pill(action)}</div>"

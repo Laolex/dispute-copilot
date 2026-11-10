@@ -199,3 +199,10 @@ def test_page_shows_claim_mismatch_banner_and_draft_is_used_as_note():
     cl.post(f"/proposals/{pid}/approve", data={"token": token(cl, pid, "approve")}, auth=AUTH)
     sent = [x for x in pp.posts if x[0].endswith("/escalate")]
     assert sent and b"disputes this claim" in sent[0][1]          # the agent's draft became the escalation note
+
+
+def test_execution_result_is_shown_as_json_not_a_python_dict():
+    from app.web import _pretty
+    t = _pretty({"ok": True, "status": 200, "body": {"links": [{"rel": "detail"}]}, "debug_id": "x"})
+    assert '"ok": true' in t and "True" not in t and "'" not in t and t.startswith("{\n")
+    assert "object" in _pretty(object())      # never raises on odd values

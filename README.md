@@ -137,7 +137,7 @@ audit payloads and checks that they show as plain text. The AG Grid Studio Agent
 | Escalate | `POST .../escalate` (inquiry to claim) | used live |
 | Provide evidence | `POST .../provide-evidence` (multipart; JSON `input` part + `evidence-file` parts, multiple files) | used live |
 | Sandbox resolution | `POST .../adjudicate` | used live (sandbox only) |
-| Webhooks | `POST /v1/notifications/webhooks`, `.../verify-webhook-signature` | implemented, unit-tested with a mocked PayPal |
+| Webhooks | `POST /v1/notifications/webhooks`, `.../verify-webhook-signature` | used live: PayPal's deliveries reach the Render deployment and create proposals |
 
 Not used: PayPal's MCP/Agent Toolkit. As far as we found, it exposes invoicing but not disputes, so this
 project calls the REST API directly.
@@ -158,8 +158,19 @@ changes lag the API response by minutes; link names use underscores while paths 
 - **Not used for:** choosing contest or accept, choosing which PayPal action to call, or anything that touches
   money. The recommendation is displayed for the reviewer and cannot change the decision, link or evidence plan. When it
   disagrees with the policy, the page and the grid flag it. The model's raw output is not stored.
+- **Live deployment:** `openai/gpt-oss-120b` on Groq (`DC_LLM_PROVIDER=groq`, `DC_MODEL=openai/gpt-oss-120b`). The page
+  names the model that produced each panel. A failed model call is logged with the provider's own error and the
+  proposal falls back to the heuristics, labelled as such.
 - **Without a model** the app runs on deterministic heuristics and templates, so it works and tests offline. If the
   model errors or returns malformed output, the same fallback applies and the audit log records it.
+
+## Sponsor tools
+
+- **Render:** hosts the live demo as a Docker web service with a persistent disk for the SQLite database and audit
+  log, described by `render.yaml` and deployed from this repository (`DEPLOY.md`). Render also receives PayPal's
+  webhooks.
+- **AG Grid Community:** the dispute queue, the audit log and the evidence provenance table (see Console above).
+- Not used: APIMatic, Postman, AG Studio.
 
 ## Run it
 
